@@ -1,5 +1,7 @@
 # Dynamic statistical arbitrage UI
 
+For the full strategy explanation, metric definitions, research caveats, and saved figures, see the [project README](../README.md).
+
 This local web app takes Yahoo Finance ticker symbols, screens pairs for cointegration on the first 80% of prices, runs the dynamic Kalman/OU strategy on the remaining 20%, and displays a pair summary, completed-trade-count chart, and combined equity-curve visualization. The equity chart colors each pair from red to green by final capital, marks initial capital with a baseline, and includes an expandable pair/final-capital legend and final-capital scale. Curves track realized capital after each closed trade, matching the notebook’s executed-trade sequence. Each run writes `dynamic_statistical_arbitrage_summary.csv` to the project root.
 
 ## Run
