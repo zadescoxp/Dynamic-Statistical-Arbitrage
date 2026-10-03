@@ -65,6 +65,20 @@
     .status { min-height: 22px; color: var(--muted); font-size: 13px; }
     .status.error { color: var(--red); }
     .status.success { color: var(--green); }
+    .toast-region { position: fixed; z-index: 10; top: 20px; right: 20px; display: grid; gap: 10px; width: min(420px, calc(100vw - 32px)); }
+    .toast { display: grid; grid-template-columns: 26px 1fr 28px; align-items: start; gap: 10px; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: #172238; box-shadow: 0 14px 42px #0008; animation: toast-in .18s ease-out; }
+    .toast.error { border-color: #a94a5b; }
+    .toast.success { border-color: #318c70; }
+    .toast.warning { border-color: #a47b33; }
+    .toast-icon { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #a83d50; color: white; font-size: 14px; font-weight: 800; }
+    .toast.success .toast-icon { background: #287a61; }
+    .toast.warning .toast-icon { background: #896523; }
+    .toast-title { font-weight: 700; margin-bottom: 2px; }
+    .toast-message { color: #c3cede; font-size: 13px; overflow-wrap: anywhere; }
+    .toast-close { background: transparent; color: var(--muted); border: 0; padding: 0; cursor: pointer; font-size: 18px; line-height: 1; }
+    .toast-close:hover { color: var(--text); background: transparent; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+    @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
     .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 34px 0 14px; }
     h2 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
     .section-note { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
@@ -111,6 +125,7 @@
   </style>
 </head>
 <body>
+  <div class="toast-region" id="toast-region" aria-live="polite" aria-relevant="additions" aria-label="Notifications"></div>
   <main>
     <header>
       <div class="eyebrow">Research workspace</div>
@@ -231,6 +246,43 @@
     const chartEmpty = document.querySelector("#chart-empty");
     const equityChart = document.querySelector("#equity-chart");
     const equityChartEmpty = document.querySelector("#equity-chart-empty");
+    const toastRegion = document.querySelector("#toast-region");
+
+    function showToast(type, title, message) {
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.setAttribute("role", type === "error" ? "alert" : "status");
+      const icon = document.createElement("span");
+      icon.className = "toast-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = type === "success" ? "✓" : type === "warning" ? "!" : "×";
+      const content = document.createElement("div");
+      const heading = document.createElement("div");
+      heading.className = "toast-title";
+      heading.textContent = title;
+      const detail = document.createElement("div");
+      detail.className = "toast-message";
+      detail.textContent = message;
+      content.append(heading, detail);
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.setAttribute("aria-label", "Dismiss notification");
+      close.textContent = "×";
+      close.addEventListener("click", () => toast.remove());
+      toast.append(icon, content, close);
+      toastRegion.append(toast);
+
+      window.setTimeout(() => toast.remove(), type === "error" ? 12000 : 6000);
+    }
+
+    function errorMessageFromResponse(data, status) {
+      if (data && typeof data.error === "string") return data.error;
+      if (status >= 500) {
+        return "The server couldn't complete this run. Please wait a moment and try again.";
+      }
+      return `The request failed (HTTP ${status}). Check the inputs and try again.`;
+    }
 
     function formatMoney(value) {
       return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
@@ -526,8 +578,17 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
         });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error(errorMessageFromResponse(null, response.status));
+        }
+        if (!response.ok) {
+          const error = new Error(errorMessageFromResponse(data, response.status));
+          error.category = data.category || (response.status >= 500 ? "server" : "input");
+          throw error;
+        }
 
         renderResults(data.results);
         renderTradeChart(data.trade_counts);
@@ -543,9 +604,20 @@
         document.querySelector("#warnings").textContent = data.warnings.join(" ");
         statusElement.className = "status success";
         statusElement.textContent = `Backtest complete. CSV saved as ${data.summary.csv_file}.`;
+        showToast("success", "Backtest complete", `Tested ${data.summary.pairs_tested} pairs. CSV saved as ${data.summary.csv_file}.`);
       } catch (error) {
         statusElement.className = "status error";
-        statusElement.textContent = error.message;
+        const message = error instanceof TypeError
+          ? "Could not reach the app server. Check your connection and try again."
+          : error.message;
+        statusElement.textContent = message;
+        const category = error.category || "server";
+        const title = category === "market_data"
+          ? "Market data unavailable"
+          : category === "input"
+            ? "Check your inputs"
+            : "Backtest failed";
+        showToast("error", title, message);
       } finally {
         runButton.disabled = false;
         runButton.textContent = "Run backtest";
