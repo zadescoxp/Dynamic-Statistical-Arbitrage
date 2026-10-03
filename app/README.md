@@ -14,6 +14,10 @@ From the project root:
 
 Then open <http://127.0.0.1:8000>. The server uses the Python standard library; the strategy dependencies are listed in `requirements.txt`.
 
+## Deploy to Render
+
+Create a Render Web Service from the repository root with build command `pip install -r app/requirements.txt` and start command `python app/server.py`. On Render, the server binds to `0.0.0.0` and uses Render's `PORT`; locally it defaults to `127.0.0.1:8000`.
+
 Enter at least two distinct Yahoo Finance ticker symbols. The default is four crypto symbols. You can change the history start date, initial capital, and entry/exit/stop z-score settings. The maximum is 40 symbols per run.
 
 Supported price intervals are daily (`1d`), hourly (`1h`), 30-minute (`30m`), and 15-minute (`15m`). Yahoo Finance restricts intraday history; the UI automatically moves the start date forward when changing to an interval with a shorter history window. The server validates this limit as well. OU half-life is reported in bars, so the result remains correctly labeled for every interval.
