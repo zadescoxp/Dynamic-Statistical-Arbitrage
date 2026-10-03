@@ -146,13 +146,19 @@ class PriceAndEngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             csv_path = Path(directory) / "summary.csv"
             with (
+                patch.object(server, "YFINANCE_CACHE_CONFIGURED", False),
                 patch.object(
                     server.yf, "download", return_value=downloaded
                 ) as download_mock,
+                patch.object(server.yf, "set_tz_cache_location") as cache_mock,
                 patch.object(server, "CSV_PATH", csv_path),
             ):
                 result = run_analysis(config)
             self.assertEqual(download_mock.call_args.kwargs["interval"], "1d")
+            self.assertFalse(download_mock.call_args.kwargs["threads"])
+            cache_mock.assert_called_once_with(
+                str(Path(tempfile.gettempdir()) / "dynamic-stat-arb-yfinance-cache")
+            )
             json.dumps(result, allow_nan=False)
             self.assertEqual(result["summary"]["pairs_tested"], 1)
             self.assertEqual(len(result["equity_curves"]), 1)
@@ -161,6 +167,35 @@ class PriceAndEngineTests(unittest.TestCase):
             self.assertEqual(curve["equity"][-1], curve["final_capital"])
             self.assertTrue(csv_path.exists())
             self.assertIn("Total Trades", csv_path.read_text(encoding="utf-8"))
+
+    def test_price_error_advises_on_rate_limited_download(self) -> None:
+        download = pd.DataFrame(
+            {
+                ("Close", "BTC-USD"): [float("nan")] * 60,
+                ("Close", "ETH-USD"): [float("nan")] * 60,
+            },
+            index=pd.date_range("2025-01-01", periods=60),
+        )
+        download.columns = pd.MultiIndex.from_tuples(download.columns)
+        with self.assertRaisesRegex(ValueError, "throttling \\(HTTP 429\\)"):
+            extract_close_prices(download, ["BTC-USD", "ETH-USD"])
+
+    def test_provider_download_exception_has_render_rate_limit_guidance(self) -> None:
+        config = BacktestConfig(
+            tickers=["BTC-USD", "ETH-USD"],
+            start_date="2024-01-01",
+            interval="1d",
+            initial_capital=100_000,
+            z_entry=2,
+            z_exit=0,
+            z_stop=3.5,
+        )
+        with (
+            patch.object(server, "YFINANCE_CACHE_CONFIGURED", True),
+            patch.object(server.yf, "download", side_effect=RuntimeError("HTTP 429")),
+        ):
+            with self.assertRaisesRegex(ValueError, "Render.*HTTP 429"):
+                run_analysis(config)
 
 
 if __name__ == "__main__":
