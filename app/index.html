@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1020">
+  <title>Dynamic Statistical Arbitrage</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --surface: #121a2c;
+      --surface-raised: #172238;
+      --border: #25334b;
+      --text: #edf3fc;
+      --muted: #91a2bc;
+      --accent: #68e0bd;
+      --accent-strong: #36c99d;
+      --red: #ff7d8b;
+      --green: #69dfad;
+      --blue: #91b9ff;
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body {
+      margin: 0;
+      background: radial-gradient(ellipse at top left, #182846 0, var(--bg) 42rem);
+      color: var(--text);
+      font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    main { width: min(1440px, calc(100% - 40px)); margin: 0 auto; padding: 44px 0 64px; }
+    .eyebrow { color: var(--accent); text-transform: uppercase; letter-spacing: .14em; font-size: 12px; font-weight: 700; }
+    h1 { margin: 8px 0 8px; font-size: clamp(28px, 4vw, 42px); letter-spacing: -.035em; }
+    .intro { max-width: 740px; color: var(--muted); margin: 0 0 28px; }
+    .card { background: color-mix(in srgb, var(--surface) 92%, transparent); border: 1px solid var(--border); border-radius: 16px; padding: 22px; box-shadow: 0 18px 55px #0003; }
+    .form-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field-wide { grid-column: 1 / -1; }
+    label { color: #c9d5e7; font-size: 13px; font-weight: 600; }
+    input, textarea {
+      width: 100%; border: 1px solid var(--border); border-radius: 9px;
+      background: #0c1424; color: var(--text); padding: 11px 12px; font: inherit;
+      outline: none;
+    }
+    select {
+      width: 100%; border: 1px solid var(--border); border-radius: 9px;
+      background: #0c1424; color: var(--text); padding: 11px 12px; font: inherit;
+      outline: none;
+    }
+    select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #68e0bd20; }
+    input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px #68e0bd20; }
+    textarea { min-height: 92px; resize: vertical; }
+    .hint { color: var(--muted); font-size: 12px; }
+    .form-footer { display: flex; align-items: center; gap: 14px; margin-top: 18px; }
+    button, .download {
+      border: 0; border-radius: 9px; padding: 11px 17px; font: inherit; font-weight: 700;
+      cursor: pointer; background: var(--accent); color: #071912; text-decoration: none;
+    }
+    button:hover, .download:hover { background: #8bf0d2; }
+    button:disabled { opacity: .65; cursor: wait; }
+    .download { display: inline-flex; align-items: center; gap: 8px; background: var(--surface-raised); color: var(--text); border: 1px solid var(--border); }
+    .download:hover { background: #202e46; }
+    .status { min-height: 22px; color: var(--muted); font-size: 13px; }
+    .status.error { color: var(--red); }
+    .status.success { color: var(--green); }
+    .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 34px 0 14px; }
+    h2 { font-size: 20px; margin: 0; letter-spacing: -.02em; }
+    .section-note { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+    .metric { background: var(--surface-raised); border: 1px solid var(--border); border-radius: 12px; padding: 15px 17px; }
+    .metric-label { color: var(--muted); font-size: 12px; }
+    .metric-value { font-size: 24px; font-weight: 700; margin-top: 2px; }
+    .table-wrap { overflow-x: auto; border-radius: 12px; }
+    table { border-collapse: collapse; width: 100%; min-width: 920px; }
+    th, td { padding: 12px 13px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--muted); background: #0d1526; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #ffffff08; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .chart-card { min-height: 185px; }
+    .chart-empty { color: var(--muted); padding: 38px 0; text-align: center; }
+    #trade-chart { display: block; width: 100%; height: auto; overflow: visible; }
+    .equity-chart-wrap { overflow-x: auto; }
+    #equity-chart { display: block; width: 100%; min-width: 760px; height: auto; }
+    .equity-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 16px; margin-top: 14px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; color: #c9d5e7; font-size: 12px; min-width: 0; }
+    .legend-swatch { flex: 0 0 16px; height: 3px; border-radius: 3px; }
+    .legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    details.legend-details { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+    details.legend-details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+    .warning { color: #ffd58a; font-size: 13px; margin: 12px 0 0; }
+    .footnote { color: var(--muted); font-size: 12px; margin-top: 12px; }
+
+    @media (max-width: 850px) {
+      .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      main { width: min(100% - 24px, 1440px); padding-top: 28px; }
+      .card { padding: 16px; }
+      .form-grid { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+      .metric-value { font-size: 20px; }
+      .section-heading { align-items: start; flex-direction: column; }
+      .form-footer { align-items: start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div class="eyebrow">Research workspace</div>
+      <h1>Dynamic statistical arbitrage</h1>
+      <p class="intro">Screen ticker pairs for cointegration, run the Kalman + OU test-period backtest, compare trades and returns, and export the complete pair summary.</p>
+    </header>
+
+    <section class="card" aria-labelledby="inputs-title">
+      <h2 id="inputs-title">Backtest inputs</h2>
+      <div class="form-grid" style="margin-top: 16px">
+        <div class="field field-wide">
+          <label for="tickers">Ticker symbols</label>
+          <textarea id="tickers" spellcheck="false" aria-describedby="ticker-hint">BTC-USD, ETH-USD, LTC-USD, BCH-USD</textarea>
+          <div class="hint" id="ticker-hint">Enter at least two Yahoo Finance symbols, separated by commas, spaces, or new lines (up to 40).</div>
+        </div>
+        <div class="field">
+          <label for="start-date">Price history starts</label>
+          <input id="start-date" type="date" value="2024-10-04">
+        </div>
+        <div class="field">
+          <label for="interval">Price interval</label>
+          <select id="interval">
+            <option value="1d" data-max-days="">Daily (1 day)</option>
+            <option value="1h" data-max-days="729">Hourly (1 hour)</option>
+            <option value="30m" data-max-days="59">30 minutes</option>
+            <option value="15m" data-max-days="59">15 minutes</option>
+          </select>
+          <div class="hint" id="interval-hint">Yahoo Finance limits intraday history; the start date will be adjusted when needed.</div>
+        </div>
+        <div class="field">
+          <label for="capital">Initial capital ($)</label>
+          <input id="capital" type="number" min="1" step="1000" value="100000">
+        </div>
+        <div class="field">
+          <label for="z-entry">Entry z-score</label>
+          <input id="z-entry" type="number" min="0.1" step="0.1" value="2">
+        </div>
+        <div class="field">
+          <label for="z-exit">Exit z-score</label>
+          <input id="z-exit" type="number" min="0" step="0.1" value="0">
+        </div>
+        <div class="field">
+          <label for="z-stop">Stop z-score</label>
+          <input id="z-stop" type="number" min="0.2" step="0.1" value="3.5">
+        </div>
+      </div>
+      <div class="form-footer">
+        <button id="run-button" type="button">Run backtest</button>
+        <span class="status" id="status" role="status" aria-live="polite">Ready when you are.</span>
+      </div>
+    </section>
+
+    <section aria-labelledby="results-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="results-title">Pair results</h2>
+          <p class="section-note" id="result-note">Run a backtest to populate the results.</p>
+        </div>
+        <a class="download" id="download-link" href="/api/download" hidden>Download CSV</a>
+      </div>
+      <div class="metrics" id="metrics" hidden>
+        <div class="metric"><div class="metric-label">Pairs screened</div><div class="metric-value" id="metric-screened">—</div></div>
+        <div class="metric"><div class="metric-label">Pairs tested</div><div class="metric-value" id="metric-tested">—</div></div>
+        <div class="metric"><div class="metric-label">Training observations</div><div class="metric-value" id="metric-train">—</div></div>
+        <div class="metric"><div class="metric-label">Test observations</div><div class="metric-value" id="metric-test">—</div></div>
+      </div>
+      <div class="card chart-card">
+        <div class="section-heading" style="margin: 0 0 10px">
+          <div>
+            <h2>Completed trades by pair</h2>
+            <p class="section-note">Trade count for each backtested pair</p>
+          </div>
+        </div>
+        <div class="chart-empty" id="chart-empty">Your pair trade counts will appear here.</div>
+        <svg id="trade-chart" role="img" aria-label="Bar chart of completed trades by pair" hidden></svg>
+      </div>
+      <div class="card chart-card" style="margin-top: 14px">
+        <div class="section-heading" style="margin: 0 0 10px">
+          <div>
+            <h2>Equity curves by pair</h2>
+            <p class="section-note">Realized portfolio capital after each closed trade; line color represents final capital.</p>
+          </div>
+        </div>
+        <div class="chart-empty" id="equity-chart-empty">Your pair equity curves will appear here.</div>
+        <div class="equity-chart-wrap">
+          <svg id="equity-chart" role="img" aria-label="Equity curves by pair, colored by final capital" hidden></svg>
+        </div>
+        <details class="legend-details" id="equity-legend-details" hidden>
+          <summary id="equity-legend-summary">Pair legend</summary>
+          <div class="equity-legend" id="equity-legend"></div>
+        </details>
+      </div>
+      <div class="card" style="margin-top: 14px; padding: 0">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pair</th><th>Final beta</th><th>OU half-life (bars)</th><th>Final capital</th>
+                <th>Net profit</th><th>Return</th><th>Trades</th><th>Win rate</th><th>Max drawdown</th>
+              </tr>
+            </thead>
+            <tbody id="results-body">
+              <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:28px">No results yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="warning" id="warnings"></div>
+      <p class="footnote">Prices come from Yahoo Finance. Cointegration screening uses the first 80% of observations; strategy results use the final 20%. This tool is for research and is not investment advice.</p>
+    </section>
+  </main>
+
+  <script>
+    const runButton = document.querySelector("#run-button");
+    const statusElement = document.querySelector("#status");
+    const resultsBody = document.querySelector("#results-body");
+    const chart = document.querySelector("#trade-chart");
+    const chartEmpty = document.querySelector("#chart-empty");
+    const equityChart = document.querySelector("#equity-chart");
+    const equityChartEmpty = document.querySelector("#equity-chart-empty");
+
+    function formatMoney(value) {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+    }
+
+    function formatNumber(value, digits = 2) {
+      return Number.isFinite(value) ? value.toFixed(digits) : "N/A";
+    }
+
+    function addCell(row, text, className = "") {
+      const cell = document.createElement("td");
+      cell.textContent = text;
+      if (className) cell.className = className;
+      row.append(cell);
+    }
+
+    function setSvgVisible(svg, visible) {
+      if (visible) svg.removeAttribute("hidden");
+      else svg.setAttribute("hidden", "");
+    }
+
+    function renderResults(results) {
+      resultsBody.replaceChildren();
+      for (const result of results) {
+        const row = document.createElement("tr");
+        addCell(row, result.Pair);
+        addCell(row, formatNumber(result["Final Beta (Kalman)"], 4));
+        addCell(row, Number.isFinite(result["OU Half-Life (Bars)"]) ? formatNumber(result["OU Half-Life (Bars)"], 1) : "N/A");
+        addCell(row, formatMoney(result["Final Capital"]));
+        addCell(row, formatMoney(result["Net Profit ($)"]), result["Net Profit ($)"] >= 0 ? "positive" : "negative");
+        addCell(row, `${formatNumber(result["Return (%)"])}%`, result["Return (%)"] >= 0 ? "positive" : "negative");
+        addCell(row, String(result["Total Trades"]));
+        addCell(row, `${formatNumber(result["Win Rate (%)"])}%`);
+        addCell(row, `${formatNumber(result["Max Drawdown (%)"])}%`, result["Max Drawdown (%)"] < 0 ? "negative" : "");
+        resultsBody.append(row);
+      }
+    }
+
+    function renderTradeChart(items) {
+      chart.replaceChildren();
+      if (!items.length) {
+        setSvgVisible(chart, false);
+        chartEmpty.hidden = false;
+        return;
+      }
+      chartEmpty.hidden = true;
+      setSvgVisible(chart, true);
+      const width = 900;
+      const rowHeight = 34;
+      const top = 8;
+      const labelWidth = 190;
+      const countWidth = 45;
+      const plotWidth = width - labelWidth - countWidth - 18;
+      const height = top * 2 + items.length * rowHeight;
+      const maxTrades = Math.max(1, ...items.map(item => item.trades));
+      chart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+      items.forEach((item, index) => {
+        const y = top + index * rowHeight;
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", String(labelWidth - 12));
+        label.setAttribute("y", String(y + 20));
+        label.setAttribute("text-anchor", "end");
+        label.setAttribute("fill", "#c9d5e7");
+        label.setAttribute("font-size", "13");
+        label.textContent = item.pair;
+        chart.append(label);
+
+        const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        background.setAttribute("x", String(labelWidth));
+        background.setAttribute("y", String(y + 5));
+        background.setAttribute("width", String(plotWidth));
+        background.setAttribute("height", "18");
+        background.setAttribute("rx", "5");
+        background.setAttribute("fill", "#202d44");
+        chart.append(background);
+
+        const bar = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        bar.setAttribute("x", String(labelWidth));
+        bar.setAttribute("y", String(y + 5));
+        bar.setAttribute("width", String(Math.max(item.trades ? 3 : 0, plotWidth * item.trades / maxTrades)));
+        bar.setAttribute("height", "18");
+        bar.setAttribute("rx", "5");
+        bar.setAttribute("fill", "#68e0bd");
+        chart.append(bar);
+
+        const count = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        count.setAttribute("x", String(labelWidth + plotWidth + 10));
+        count.setAttribute("y", String(y + 20));
+        count.setAttribute("fill", "#91a2bc");
+        count.setAttribute("font-size", "13");
+        count.textContent = String(item.trades);
+        chart.append(count);
+      });
+    }
+
+    function svgElement(name, attributes = {}, text = "") {
+      const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+      for (const [key, value] of Object.entries(attributes)) {
+        element.setAttribute(key, String(value));
+      }
+      if (text) element.textContent = text;
+      return element;
+    }
+
+    function gradientColor(ratio) {
+      const stops = [
+        { at: 0, color: [215, 25, 28] },
+        { at: 0.5, color: [255, 255, 191] },
+        { at: 1, color: [26, 150, 65] }
+      ];
+      const bounded = Math.max(0, Math.min(1, ratio));
+      const rightIndex = stops.findIndex(stop => stop.at >= bounded);
+      const left = stops[Math.max(0, rightIndex - 1)];
+      const right = stops[rightIndex < 0 ? stops.length - 1 : rightIndex];
+      const portion = right.at === left.at ? 0 : (bounded - left.at) / (right.at - left.at);
+      const channels = left.color.map((value, index) =>
+        Math.round(value + (right.color[index] - value) * portion)
+      );
+      return `rgb(${channels.join(",")})`;
+    }
+
+    function renderEquityChart(curves, initialCapital) {
+      equityChart.replaceChildren();
+      document.querySelector("#equity-legend").replaceChildren();
+      if (!curves.length) {
+        setSvgVisible(equityChart, false);
+        equityChartEmpty.hidden = false;
+        document.querySelector("#equity-legend-details").hidden = true;
+        return;
+      }
+
+      equityChartEmpty.hidden = true;
+      setSvgVisible(equityChart, true);
+      const width = 960;
+      const height = 440;
+      const plot = { left: 82, top: 26, right: 830, bottom: 350 };
+      let low = initialCapital;
+      let high = initialCapital;
+      let minFinalCapital = Infinity;
+      let maxFinalCapital = -Infinity;
+      for (const curve of curves) {
+        minFinalCapital = Math.min(minFinalCapital, curve.final_capital);
+        maxFinalCapital = Math.max(maxFinalCapital, curve.final_capital);
+        for (const value of curve.equity) {
+          low = Math.min(low, value);
+          high = Math.max(high, value);
+        }
+      }
+      const padding = (high - low) * 0.08 || initialCapital * 0.02;
+      const minCapital = low - padding;
+      const maxCapital = high + padding;
+      const maxTradeIndex = Math.max(1, ...curves.map(curve => curve.equity.length - 1));
+      const x = index => plot.left + index / maxTradeIndex * (plot.right - plot.left);
+      const y = value => plot.bottom - (value - minCapital) / (maxCapital - minCapital) * (plot.bottom - plot.top);
+      equityChart.setAttribute("viewBox", `0 0 ${width} ${height}`);
+
+      const defs = svgElement("defs");
+      const colorGradient = svgElement("linearGradient", { id: "equity-color-scale", x1: "0%", x2: "100%" });
+      colorGradient.append(
+        svgElement("stop", { offset: "0%", "stop-color": gradientColor(0) }),
+        svgElement("stop", { offset: "50%", "stop-color": gradientColor(0.5) }),
+        svgElement("stop", { offset: "100%", "stop-color": gradientColor(1) })
+      );
+      defs.append(colorGradient);
+      equityChart.append(defs);
+
+      const yTicks = 5;
+      for (let index = 0; index <= yTicks; index++) {
+        const value = minCapital + (maxCapital - minCapital) * index / yTicks;
+        const position = y(value);
+        equityChart.append(
+          svgElement("line", { x1: plot.left, x2: plot.right, y1: position, y2: position, stroke: "#29364b", "stroke-dasharray": "4 5" }),
+          svgElement("text", { x: plot.left - 10, y: position + 4, fill: "#91a2bc", "font-size": 11, "text-anchor": "end" }, formatMoney(value))
+        );
+      }
+
+      const baselineY = y(initialCapital);
+      equityChart.append(
+        svgElement("line", { x1: plot.left, x2: plot.right, y1: baselineY, y2: baselineY, stroke: "#edf3fc", "stroke-width": 1.5, "stroke-dasharray": "7 5", opacity: 0.8 }),
+        svgElement("text", { x: plot.right - 4, y: baselineY - 7, fill: "#edf3fc", "font-size": 11, "text-anchor": "end" }, `Initial capital ${formatMoney(initialCapital)}`)
+      );
+
+      const xTicks = Math.min(5, maxTradeIndex);
+      for (let index = 0; index <= xTicks; index++) {
+        const tradeIndex = Math.round(maxTradeIndex * index / xTicks);
+        const position = x(tradeIndex);
+        equityChart.append(
+          svgElement("line", { x1: position, x2: position, y1: plot.bottom, y2: plot.bottom + 5, stroke: "#91a2bc" }),
+          svgElement("text", { x: position, y: plot.bottom + 20, fill: "#91a2bc", "font-size": 11, "text-anchor": "middle" }, String(tradeIndex))
+        );
+      }
+
+      equityChart.append(
+        svgElement("line", { x1: plot.left, x2: plot.left, y1: plot.top, y2: plot.bottom, stroke: "#526079" }),
+        svgElement("line", { x1: plot.left, x2: plot.right, y1: plot.bottom, y2: plot.bottom, stroke: "#526079" }),
+        svgElement("text", { x: (plot.left + plot.right) / 2, y: plot.bottom + 45, fill: "#c9d5e7", "font-size": 12, "text-anchor": "middle" }, "Executed trade sequence index"),
+        svgElement("text", { x: 18, y: (plot.top + plot.bottom) / 2, fill: "#c9d5e7", "font-size": 12, "text-anchor": "middle", transform: `rotate(-90 18 ${(plot.top + plot.bottom) / 2})` }, "Portfolio capital ($)")
+      );
+
+      curves.forEach(curve => {
+        const ratio = maxFinalCapital === minFinalCapital
+          ? 0.5
+          : (curve.final_capital - minFinalCapital) /
+            (maxFinalCapital - minFinalCapital);
+        const color = gradientColor(ratio);
+        const points = curve.equity.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+        equityChart.append(
+          svgElement("polyline", {
+            points,
+            fill: "none",
+            stroke: color,
+            "stroke-width": 2,
+            "stroke-linejoin": "round",
+            "stroke-linecap": "round",
+            opacity: 0.82
+          })
+        );
+        const legendItem = document.createElement("div");
+        legendItem.className = "legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "legend-swatch";
+        swatch.style.backgroundColor = color;
+        const label = document.createElement("span");
+        label.className = "legend-label";
+        label.textContent = `${curve.pair} (${formatMoney(curve.final_capital)})`;
+        legendItem.append(swatch, label);
+        document.querySelector("#equity-legend").append(legendItem);
+      });
+
+      const scaleX = 846;
+      const scaleWidth = 16;
+      const scaleY = plot.top;
+      const scaleHeight = plot.bottom - plot.top;
+      equityChart.append(
+        svgElement("rect", { x: scaleX, y: scaleY, width: scaleWidth, height: scaleHeight, fill: "url(#equity-color-scale)", rx: 4 }),
+        svgElement("text", { x: scaleX + scaleWidth + 8, y: scaleY + 4, fill: "#91a2bc", "font-size": 10 }, formatMoney(maxFinalCapital)),
+        svgElement("text", { x: scaleX + scaleWidth + 8, y: scaleY + scaleHeight, fill: "#91a2bc", "font-size": 10 }, formatMoney(minFinalCapital)),
+        svgElement("text", { x: scaleX + scaleWidth / 2, y: scaleY - 9, fill: "#c9d5e7", "font-size": 10, "text-anchor": "middle" }, "Final capital")
+      );
+      const details = document.querySelector("#equity-legend-details");
+      details.hidden = false;
+      document.querySelector("#equity-legend-summary").textContent = `Pair legend (${curves.length})`;
+    }
+
+    function tickerArray() {
+      return document.querySelector("#tickers").value.split(/[\s,;]+/).map(item => item.trim()).filter(Boolean);
+    }
+
+    function clampStartDateToInterval() {
+      const intervalSelect = document.querySelector("#interval");
+      const maxDays = Number(intervalSelect.selectedOptions[0].dataset.maxDays);
+      const dateInput = document.querySelector("#start-date");
+      if (!maxDays) {
+        dateInput.removeAttribute("min");
+        return;
+      }
+
+      const earliest = new Date();
+      earliest.setDate(earliest.getDate() - maxDays);
+      const minimumDate = [
+        earliest.getFullYear(),
+        String(earliest.getMonth() + 1).padStart(2, "0"),
+        String(earliest.getDate()).padStart(2, "0")
+      ].join("-");
+      dateInput.min = minimumDate;
+      if (dateInput.value && dateInput.value < minimumDate) {
+        dateInput.value = minimumDate;
+      }
+    }
+
+    document.querySelector("#interval").addEventListener("change", clampStartDateToInterval);
+    clampStartDateToInterval();
+
+    runButton.addEventListener("click", async () => {
+      const payload = {
+        tickers: tickerArray(),
+        start_date: document.querySelector("#start-date").value,
+        interval: document.querySelector("#interval").value,
+        initial_capital: document.querySelector("#capital").value,
+        z_entry: document.querySelector("#z-entry").value,
+        z_exit: document.querySelector("#z-exit").value,
+        z_stop: document.querySelector("#z-stop").value
+      };
+      runButton.disabled = true;
+      runButton.textContent = "Running…";
+      statusElement.className = "status";
+      statusElement.textContent = "Downloading prices and screening pairs. This may take a minute…";
+      document.querySelector("#warnings").textContent = "";
+      try {
+        const response = await fetch("/api/backtest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `Request failed (${response.status}).`);
+
+        renderResults(data.results);
+        renderTradeChart(data.trade_counts);
+        renderEquityChart(data.equity_curves, data.results[0]["Initial Capital"]);
+        document.querySelector("#metrics").hidden = false;
+        document.querySelector("#metric-screened").textContent = data.summary.pairs_screened;
+        document.querySelector("#metric-tested").textContent = data.summary.pairs_tested;
+        document.querySelector("#metric-train").textContent = data.summary.train_rows;
+        document.querySelector("#metric-test").textContent = data.summary.test_rows;
+        document.querySelector("#result-note").textContent =
+          `${data.summary.pairs_tested} pair(s) tested from ${data.summary.price_rows} available ${data.summary.interval} observations. OU half-life is in bars.`;
+        document.querySelector("#download-link").hidden = false;
+        document.querySelector("#warnings").textContent = data.warnings.join(" ");
+        statusElement.className = "status success";
+        statusElement.textContent = `Backtest complete. CSV saved as ${data.summary.csv_file}.`;
+      } catch (error) {
+        statusElement.className = "status error";
+        statusElement.textContent = error.message;
+      } finally {
+        runButton.disabled = false;
+        runButton.textContent = "Run backtest";
+      }
+    });
+  </script>
+</body>
+</html>
