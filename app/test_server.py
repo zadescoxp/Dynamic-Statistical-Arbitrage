@@ -1,5 +1,6 @@
 import unittest
 import json
+import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +13,7 @@ from server import (
     BacktestConfig,
     DynamicStatArbEngine,
     extract_close_prices,
+    get_server_address,
     parse_config,
     run_analysis,
 )
@@ -46,6 +48,19 @@ class ParseConfigTests(unittest.TestCase):
                     "z_stop": 3,
                 }
             )
+
+    def test_server_defaults_to_localhost_for_development(self) -> None:
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_server_address(), ("127.0.0.1", 8000))
+
+    def test_server_uses_render_host_and_port(self) -> None:
+        with patch.dict(os.environ, {"RENDER": "true", "PORT": "10000"}, clear=True):
+            self.assertEqual(get_server_address(), ("0.0.0.0", 10000))
+
+    def test_server_rejects_invalid_port(self) -> None:
+        with patch.dict(os.environ, {"PORT": "not-a-port"}, clear=True):
+            with self.assertRaisesRegex(ValueError, "PORT must be an integer"):
+                get_server_address()
 
     def test_accepts_supported_interval(self) -> None:
         config = parse_config(
