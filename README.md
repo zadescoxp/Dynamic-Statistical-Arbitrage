@@ -31,9 +31,18 @@ Enter two or more Yahoo Finance symbols separated by commas, spaces, or newlines
 
 The app writes `dynamic_statistical_arbitrage_summary.csv` in the project root and provides a download link after a successful run. A later run replaces that file. You need internet access for Yahoo Finance price data.
 
-### Hosting
+### Deploy to Render
 
-The included server is configured for local use and currently binds to `127.0.0.1:8000`. Before deploying it as a Render Web Service, update it to bind to `0.0.0.0` and read Render's `PORT` environment variable. The CSV is written to local disk; hosted filesystems may not persist between restarts or deployments. Use persistent storage or a separate object store if exported summaries must be retained. Do not expose this development server directly to the public internet without adding appropriate production hardening.
+Create a **Web Service** in Render connected to this repository, with the repository root as the service root directory. Use:
+
+| Render setting | Value |
+| --- | --- |
+| Build command | `pip install -r app/requirements.txt` |
+| Start command | `python app/server.py` |
+
+The server binds to `0.0.0.0` when Render sets its `RENDER` environment variable and listens on the port from `PORT`. Locally, it keeps the `127.0.0.1:8000` default. If Render reports no open port, confirm the service is a **Web Service**, the start command runs `app/server.py`, and the app starts successfully and listens on the provided port.
+
+The CSV is written to local disk; hosted filesystems may not persist between restarts or deployments. Use persistent storage or a separate object store if exported summaries must be retained. This development server does not include production hardening such as authentication, request rate limiting, or background jobs.
 
 ## Strategy walkthrough
 
