@@ -5,6 +5,7 @@ import io
 import json
 import logging
 import math
+import os
 import re
 import tempfile
 import traceback
@@ -550,9 +551,19 @@ class AppHandler(BaseHTTPRequestHandler):
         logging.info("%s - %s", self.address_string(), format_string % args)
 
 
+def get_server_address() -> tuple[str, int]:
+    host = os.environ.get("HOST", "0.0.0.0" if os.environ.get("RENDER") else "127.0.0.1")
+    try:
+        port = int(os.environ.get("PORT", "8000"))
+    except ValueError as error:
+        raise ValueError("PORT must be an integer between 1 and 65535.") from error
+    if not 1 <= port <= 65535:
+        raise ValueError("PORT must be an integer between 1 and 65535.")
+    return host, port
+
+
 def main() -> None:
-    host = "127.0.0.1"
-    port = 8000
+    host, port = get_server_address()
     server = ThreadingHTTPServer((host, port), AppHandler)
     logging.info("Statistical arbitrage UI running at http://%s:%s", host, port)
     try:
