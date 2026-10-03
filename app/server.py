@@ -8,6 +8,7 @@ import math
 import os
 import re
 import tempfile
+import threading
 import traceback
 from dataclasses import dataclass
 from datetime import date
@@ -41,6 +42,8 @@ CSV_COLUMNS = [
 MAX_REQUEST_BYTES = 16_384
 MAX_TICKERS = 40
 TICKER_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.^=_-]{0,24}$")
+YFINANCE_DOWNLOAD_LOCK = threading.Lock()
+YFINANCE_CACHE_CONFIGURED = False
 INTERVAL_MAX_HISTORY_DAYS = {
     "1d": None,
     "1h": 729,
@@ -60,6 +63,10 @@ class BacktestConfig:
     z_entry: float
     z_exit: float
     z_stop: float
+
+
+class MarketDataError(ValueError):
+    pass
 
 
 def parse_config(payload: Any) -> BacktestConfig:
@@ -133,7 +140,11 @@ def parse_config(payload: Any) -> BacktestConfig:
 
 def extract_close_prices(download: pd.DataFrame, tickers: list[str]) -> pd.DataFrame:
     if download.empty:
-        raise ValueError("Yahoo Finance returned no price data for the selected tickers and date.")
+        raise MarketDataError(
+            "Yahoo Finance returned no price data. On Render, this may be temporary "
+            "request throttling (HTTP 429). Wait a few minutes, verify the symbols and "
+            "date range, then retry with fewer tickers."
+        )
 
     prices: pd.DataFrame
     if isinstance(download.columns, pd.MultiIndex):
@@ -167,7 +178,14 @@ def extract_close_prices(download: pd.DataFrame, tickers: list[str]) -> pd.DataF
     usable = [ticker for ticker in present if prices[ticker].notna().sum() >= 60]
     excluded = [ticker for ticker in present if ticker not in usable]
     if len(usable) < 2:
-        raise ValueError("Fewer than two tickers have at least 60 valid closing prices.")
+        unavailable = missing + excluded
+        detail = f" Unavailable or insufficient: {', '.join(unavailable)}." if unavailable else ""
+        raise MarketDataError(
+            "Yahoo Finance returned usable closing prices for fewer than two tickers."
+            f"{detail} On Render, this may be temporary request throttling (HTTP 429). "
+            "Wait a few minutes, verify the symbols and date range, then retry with "
+            "fewer tickers."
+        )
     return prices[usable].dropna(how="all"), missing + excluded
 
 
@@ -328,15 +346,41 @@ def _pair_p_value(train: pd.DataFrame, first: str, second: str) -> float:
         return np.nan
 
 
+def _configure_yfinance_cache() -> None:
+    global YFINANCE_CACHE_CONFIGURED
+    if YFINANCE_CACHE_CONFIGURED:
+        return
+    cache_path = Path(tempfile.gettempdir()) / "dynamic-stat-arb-yfinance-cache"
+    cache_path.mkdir(parents=True, exist_ok=True)
+    yf.set_tz_cache_location(str(cache_path))
+    YFINANCE_CACHE_CONFIGURED = True
+
+
 def run_analysis(config: BacktestConfig) -> dict[str, Any]:
-    downloaded = yf.download(
-        config.tickers,
-        start=config.start_date,
-        interval=config.interval,
-        auto_adjust=True,
-        progress=False,
-        threads=True,
-    )
+    try:
+        with YFINANCE_DOWNLOAD_LOCK:
+            _configure_yfinance_cache()
+            downloaded = yf.download(
+                config.tickers,
+                start=config.start_date,
+                interval=config.interval,
+                auto_adjust=True,
+                progress=False,
+                threads=False,
+            )
+    except Exception as error:
+        logging.warning("Yahoo Finance download failed: %s", error)
+        raise MarketDataError(
+            "Yahoo Finance could not download prices. On Render this may be temporary "
+            "request throttling (HTTP 429). Wait a few minutes and retry with fewer "
+            "tickers; also confirm the symbols and date range."
+        ) from error
+    if downloaded is None or downloaded.empty:
+        raise MarketDataError(
+            "Yahoo Finance returned no price data. On Render, this may be temporary "
+            "request throttling (HTTP 429). Wait a few minutes, verify the symbols and "
+            "date range, then retry with fewer tickers."
+        )
     prices, excluded_tickers = extract_close_prices(downloaded, config.tickers)
     split_index = int(len(prices) * 0.8)
     if split_index < 60 or len(prices) - split_index <= 60:
@@ -517,13 +561,21 @@ class AppHandler(BaseHTTPRequestHandler):
 
         try:
             self._send_json(200, run_analysis(config))
+        except MarketDataError as error:
+            self._send_json(502, {"error": str(error), "category": "market_data"})
         except ValueError as error:
             self._send_json(422, {"error": str(error)})
         except Exception as error:
             logging.error("Backtest failed:\n%s", traceback.format_exc())
             self._send_json(
                 502,
-                {"error": f"Backtest failed: {error}. Check your connection and ticker symbols."},
+                {
+                    "error": (
+                        "The backtest could not be completed because of an unexpected "
+                        "server error. Please try again later."
+                    ),
+                    "category": "server",
+                },
             )
 
     def _send_json(self, status: int, body: dict[str, Any]) -> None:
@@ -564,6 +616,8 @@ def get_server_address() -> tuple[str, int]:
 
 def main() -> None:
     host, port = get_server_address()
+    with YFINANCE_DOWNLOAD_LOCK:
+        _configure_yfinance_cache()
     server = ThreadingHTTPServer((host, port), AppHandler)
     logging.info("Statistical arbitrage UI running at http://%s:%s", host, port)
     try:
