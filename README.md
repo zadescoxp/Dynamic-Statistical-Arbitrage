@@ -31,6 +31,10 @@ Enter two or more Yahoo Finance symbols separated by commas, spaces, or newlines
 
 The app writes `dynamic_statistical_arbitrage_summary.csv` in the project root and provides a download link after a successful run. A later run replaces that file. You need internet access for Yahoo Finance price data.
 
+Yahoo Finance may throttle requests, especially for large ticker universes. The app downloads symbols sequentially, serializes concurrent download runs, and puts yfinance's timezone cache in a writable temporary directory. If logs still show HTTP 429 or crumb rate limiting, wait before retrying and try a smaller ticker list; a "possibly delisted" message after a 429 does not by itself prove that the symbol is delisted.
+
+The UI shows dismissible success and failure toasts. Rate-limited or unavailable Yahoo Finance data gets a market-data message with retry guidance; invalid inputs, unexpected server failures, and network connection failures are reported separately.
+
 ### Deploy to Render
 
 Create a **Web Service** in Render connected to this repository, with the repository root as the service root directory. Use:
